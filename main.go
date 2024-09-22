@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
+	"math/rand"
 	"net/http"
 	"strings"
 )
@@ -36,6 +38,12 @@ type Middleware func(http.HandlerFunc) http.HandlerFunc
 
 func tokenAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Profile create POST method is public
+		if r.Method == http.MethodPost {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		clientId := r.URL.Query().Get("clientId")
 
 		clientProfile, ok := database[clientId]
@@ -75,10 +83,14 @@ func main() {
 
 	var handler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
+		case http.MethodPost:
+			createClientProfile(w, r)
 		case http.MethodGet:
 			getClientProfile(w, r)
 		case http.MethodPatch:
 			updateClientProfile(w, r)
+		case http.MethodDelete:
+			deleteClientProfile(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -96,6 +108,30 @@ func main() {
 }
 
 // Handler methods Get, PATCH
+func createClientProfile(w http.ResponseWriter, r *http.Request) {
+	var payloadData ClientProfile
+
+	if err := json.NewDecoder(r.Body).Decode(&payloadData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	defer r.Body.Close()
+
+	w.Header().Set("Content-Type", "application/json")
+
+	userId := fmt.Sprintf("user%d", len(database)+1)
+	response := ClientProfile{
+		Id:    userId,
+		Name:  payloadData.Name,
+		Gmail: payloadData.Gmail,
+		Token: fmt.Sprintf("%s%d", payloadData.Name, rand.Int()),
+	}
+
+	database[userId] = response
+	json.NewEncoder(w).Encode(response)
+}
+
 func getClientProfile(w http.ResponseWriter, r *http.Request) {
 	clientProfile := r.Context().Value("clientProfile").(ClientProfile)
 
@@ -105,6 +141,7 @@ func getClientProfile(w http.ResponseWriter, r *http.Request) {
 		Id:    clientProfile.Id,
 		Name:  clientProfile.Name,
 		Gmail: clientProfile.Gmail,
+		Token: clientProfile.Token,
 	}
 
 	json.NewEncoder(w).Encode(response)
@@ -118,6 +155,8 @@ func updateClientProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
+
+	defer r.Body.Close()
 
 	if payloadData.Gmail != "" {
 		clientProfile.Gmail = payloadData.Gmail
@@ -133,7 +172,16 @@ func updateClientProfile(w http.ResponseWriter, r *http.Request) {
 		Id:    clientProfile.Id,
 		Name:  clientProfile.Name,
 		Gmail: clientProfile.Gmail,
+		Token: clientProfile.Token,
 	}
 
 	json.NewEncoder(w).Encode(response)
+}
+
+func deleteClientProfile(w http.ResponseWriter, r *http.Request) {
+	clientProfile := r.Context().Value("clientProfile").(ClientProfile)
+
+	delete(database, clientProfile.Id)
+
+	w.WriteHeader(http.StatusNoContent)
 }
