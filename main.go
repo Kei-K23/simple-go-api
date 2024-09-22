@@ -67,5 +67,36 @@ func getClientProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func updateClientProfile(w http.ResponseWriter, r *http.Request) {
+	clientId := r.URL.Query().Get("clientId")
 
+	clientProfile, ok := database[clientId]
+
+	if !ok || clientId == "" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var payloadData ClientProfile
+	if err := json.NewDecoder(r.Body).Decode(&payloadData); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if payloadData.Gmail != "" {
+		clientProfile.Gmail = payloadData.Gmail
+	}
+
+	if payloadData.Name != "" {
+		clientProfile.Name = payloadData.Name
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	response := ClientProfile{
+		Id:    clientProfile.Id,
+		Name:  clientProfile.Name,
+		Gmail: clientProfile.Gmail,
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
